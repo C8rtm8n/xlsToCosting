@@ -3,20 +3,32 @@ import pandas as pd
 import sqlite3
 import os
 
-
 # Funkce pro nahrání dat do SQLite databáze
 def upload_data_to_sqlite(excel_data, sqlite_file_path, table_name):
     # Připojení k SQLite databázi
     connection = sqlite3.connect(sqlite_file_path)
     cursor = connection.cursor()
 
-    # Příprava dat pro vložení (bez sloupce 'id', který by měl být autoincrement)
-    columns_to_insert = [col for col in excel_data.columns if col != 'id']
+    # Kontrola, zda tabulka existuje
+    cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+    table_exists = cursor.fetchone() is not None
+
+    # Pokud tabulka neexistuje, vytvoř ji
+    if not table_exists:
+        cursor.execute(f"""
+            CREATE TABLE {table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                {', '.join(f"[{col}] {dtype}" for col, dtype in zip(excel_data.columns, ['INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'INTEGER', 'REAL', 'REAL', 'REAL', 'REAL', 'REAL', 'TEXT']))}
+            );
+        """)
+
+    # Vložení dat (bez sloupce 'id', který je AUTOINCREMENT)
+    columns_to_insert = [col for col in excel_data.columns]
     data_to_insert = excel_data[columns_to_insert]
 
     # Dynamické sestavení SQL INSERT dotazu
     placeholders = ", ".join("?" for _ in columns_to_insert)
-    column_names = ", ".join(columns_to_insert)
+    column_names = ", ".join(f"[{col}]" for col in columns_to_insert)
     insert_query = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
 
     # Vložení jednotlivých řádků do databáze
@@ -39,20 +51,24 @@ uploaded_db = st.file_uploader("Nahrajte SQLite databázi (.sldctm)", type=["sld
 if uploaded_excel and uploaded_db:
     try:
         # Načtení dat z Excel souboru
-        df = pd.read_excel(uploaded_excel)
-        st.write("Načtená data:")
-        st.dataframe(df)
+        df_turn = pd.read_excel(uploaded_excel, sheet_name="TurnOperationCost")
+        df_mill = pd.read_excel(uploaded_excel, sheet_name="MillOperationCost")
+
+        st.write("Načtená data z 'TurnOperationCost':")
+        st.dataframe(df_turn)
+
+        st.write("Načtená data z 'MillOperationCost':")
+        st.dataframe(df_mill)
 
         # Uložení databázového souboru na disk
         sqlite_file_path = f"./{uploaded_db.name}"
         with open(sqlite_file_path, "wb") as f:
             f.write(uploaded_db.getbuffer())
 
-        table_name = "TurnOperationCost"  # Pevně nastavená tabulka
-
         # Krok 3: Tlačítko pro nahrání dat
         if st.button("Nahrát data do databáze"):
-            upload_data_to_sqlite(df, sqlite_file_path, table_name)
+            upload_data_to_sqlite(df_turn, sqlite_file_path, "TurnOperationCost")
+            upload_data_to_sqlite(df_mill, sqlite_file_path, "MillOperationCost")
 
         # Krok 4: Nabídka ke stažení aktualizovaného databázového souboru
         with open(sqlite_file_path, "rb") as f:
